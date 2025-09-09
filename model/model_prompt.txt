@@ -1,0 +1,43 @@
+Build a Python-based DDoS detection system for SDN network slicing using machine learning. The system will analyze network flows in real-time to detect and mitigate DDoS attacks within different network slices.
+
+### Model Details:
+- Multiple ML algorithms for DDoS detection:
+  - Random Forest
+  - Decision Trees
+  - K-Nearest Neighbors
+  - Support Vector Machine
+  - Naive Bayes
+  - Logistic Regression
+
+### Input Features:
+- Flow statistics:
+  - Source/Destination IP and Port
+  - Protocol type (TCP/UDP/ICMP)
+  - Packet count and byte count
+  - Flow duration
+  - Packets/bytes per second
+  - Slice identifier
+
+### API:
+- `POST /detect`
+  - Input: Flow statistics in JSON format
+  - Output: DDoS detection result with confidence score
+
+### Key Components:
+1. **Flow Collector**: Captures flow statistics from SDN switches
+2. **Feature Extractor**: Processes raw flow data into ML features
+3. **Model Trainer**: Handles model training and evaluation
+4. **DDoS Detector**: Real-time detection of DDoS attacks
+5. **Mitigation Module**: Implements slice-aware mitigation strategies
+
+### Features:
+- Real-time flow analysis
+- Multiple ML models for detection
+- Slice-aware DDoS mitigation
+- Performance metrics and logging
+- REST API for integration with SDN controller
+
+### Integration:
+- Works with RYU SDN controller
+- Supports OpenFlow 1.3+
+- Can be extended with custom detection rules
