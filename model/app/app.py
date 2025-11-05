@@ -174,50 +174,13 @@ def capture_loop():
             # SEND LIVE PACKET TO NODE BACKEND
             # ==========================================
             try:
-                # Get source and destination ports if available
-                src_port = None
-                dst_port = None
-                if hasattr(pkt, 'tcp'):
-                    src_port = int(getattr(pkt.tcp, 'srcport', 0))
-                    dst_port = int(getattr(pkt.tcp, 'dstport', 0))
-                elif hasattr(pkt, 'udp'):
-                    src_port = int(getattr(pkt.udp, 'srcport', 0))
-                    dst_port = int(getattr(pkt.udp, 'dstport', 0))
-                
-                # Determine network slice with port information
-                network_slice = get_network_slice(size, protocol, src_port, dst_port)
-                
-                # Check if packet is malicious (using the same logic as DDoS detection)
-                is_malicious = is_ddos_attack(size, pps)
-                detection_reason = None
-                confidence = 0.0
-                
-                if is_malicious:
-                    detection_reason = f"High packet rate: {pps:.0f} pps"
-                    confidence = min(pps / 100, 0.99)  # Higher PPS = higher confidence
-                
-                # Prepare packet data
-                packet_data = {
+                requests.post(NODE_LIVEPACKET, json={
                     "srcIP": src_ip,
                     "dstIP": dst_ip,
                     "protocol": protocol,
                     "packetSize": size,
-                    "srcPort": src_port,
-                    "dstPort": dst_port,
-                    "network_slice": network_slice,
-                    "isMalicious": is_malicious,
-                    "timestamp": int(time.time() * 1000)  # Current timestamp in milliseconds
-                }
-                
-                # Add detection info if malicious
-                if is_malicious:
-                    packet_data.update({
-                        "detectionReason": detection_reason,
-                        "confidence": round(confidence, 2)
-                    })
-                
-                # Send to frontend
-                requests.post(NODE_LIVEPACKET, json=packet_data, timeout=0.1)
+                    "timestamp": int(time.time() * 1000)
+                })
             except Exception as e:
                 log.debug(f"Live packet send failed: {e}")
 
