@@ -1,70 +1,83 @@
 # ==========================================================
-# model/app.py — SENTINEL AI (Wi-Fi Capture + Stable Connection)
+# model/app.py — SENTINEL AI (Scapy + Protocol Names)
 # ==========================================================
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import logging
 import threading
-import asyncio
-import pyshark
+import time
+import socket
+from datetime import datetime
+from collections import defaultdict, deque
+
+# ---------- 3rd party ----------
+from scapy.all import sniff, IP          # <-- FAST capture
 import joblib
 import numpy as np
-from datetime import datetime
-import socket
-import time
-import random
 
+# ==========================================================
 app = Flask(__name__)
-CORS(app, origins=["*"])  # Allow all origins
+CORS(app, origins=["*"])
 
-# === LOGGING SETUP ===
+# === LOGGING ===
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("SENTINEL")
 
 # === AUTO-DETECT LAPTOP IP ===
-def get_laptop_ip():
+def get_laptop_ip() -> str:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 1))
-        ip = s.getsockname()[0]
-    except:
-        ip = "127.0.0.1"
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
     finally:
         s.close()
-    return ip
 
 LAPTOP_IP = get_laptop_ip()
 log.info(f"LAPTOP IP AUTO DETECTED → {LAPTOP_IP}")
 
 # ==========================================================
-# CONFIGURATION (UPDATE IF NEEDED)
+# CONFIGURATION
 # ==========================================================
-# VM → RYU Controller IP
-RYU_URL = "http://192.168.56.101:8080"
+RYU_URL        = "http://192.168.56.101:8080"
+NODE_HOST      = "localhost"
+NODE_URL       = f"http://{NODE_HOST}:3000/api/emit-blocked-ip"
+NODE_LIVEPACKET= f"http://{NODE_HOST}:3000/api/live-packet"
 
-# 💡 Use laptop's IP (from ipconfig or detected above)
-NODE_HOST = "localhost"
-NODE_URL = f"http://{NODE_HOST}:3000/api/emit-blocked-ip"
-NODE_LIVEPACKET = f"http://{NODE_HOST}:3000/api/live-packet"
+MODEL_PATH     = "models/randomforest_dummy.pkl"
+BLOCKED_IPS    = set()
+running        = False
 
-MODEL_PATH = "models/randomforest_dummy.pkl"
-BLOCKED_IPS = set()
-running = False
-capture = None
+# === PROTOCOL NUMBER → NAME MAPPING ===
+PROTOCOL_MAP = {
+    1:  "ICMP",
+    2:  "IGMP",
+    6:  "TCP",
+    17: "UDP",
+    89: "OSPF",
+    41: "IPv6",
+    50: "ESP",
+    51: "AH",
+    # Add more as needed
+}
 
-# === LOAD ML MODEL ===
+# === LOAD ML MODEL + PRINT EXPECTED FEATURES ===
+model = None
 try:
     model = joblib.load(MODEL_PATH)
-    log.info("ML MODEL LOADED → AI DETECTION ACTIVE ✅")
+    log.info("ML MODEL LOADED → AI DETECTION ACTIVE")
+    log.info(f"   → Model expects {model.n_features_in_} features")
+    if hasattr(model, "feature_names_in_"):
+        log.info(f"   → Feature names: {list(model.feature_names_in_)}")
 except Exception as e:
-    model = None
-    log.warning(f"⚠️ NO ML MODEL FOUND → Using fallback rule ({e})")
+    log.warning(f"NO ML MODEL FOUND → fallback rule ({e})")
 
 # ==========================================================
-# RYU CONTROLLER: BLOCK IP
+# RYU CONTROLLER: BLOCK / UNBLOCK
 # ==========================================================
-def block_ip(ip):
+def block_ip(ip: str) -> bool:
     if ip in BLOCKED_IPS:
         return True
     url = f"{RYU_URL}/stats/flowentry/add"
@@ -78,204 +91,171 @@ def block_ip(ip):
         r = requests.post(url, json=rule, timeout=3)
         if r.ok:
             BLOCKED_IPS.add(ip)
-            log.warning(f"🚫 BLOCKED {ip} → SDN DROP RULE ADDED")
+            log.warning(f"BLOCKED {ip} → SDN DROP RULE ADDED")
             return True
     except Exception as e:
         log.error(f"RYU CONTROLLER UNREACHABLE: {e}")
     return False
 
 # ==========================================================
-# NETWORK SLICE DETECTION
+# RATE TRACKER (per source IP) → real PPS for DDoS check
 # ==========================================================
-def get_network_slice(pkt_size, protocol, src_port=None, dst_port=None):
-    """
-    Enhanced network slice detection based on packet characteristics and ports
-    - eMBB: High bandwidth traffic (video, downloads, large data transfers)
-    - URLLC: Low latency traffic (gaming, VoIP, real-time applications)
-    - mMTC: IoT/device traffic (sensors, periodic updates)
-    """
-    # Common ports for different types of traffic
-    VIDEO_PORTS = {80, 443, 1935, 554, 1936, 3478, 3479, 3480}  # HTTP/HTTPS, RTMP, RTSP, STUN
-    GAMING_PORTS = {80, 443, 1935, 3478, 3479, 3480, 27015, 27016, 27017, 27018, 27019, 27020}  # Common game ports
-    VOIP_PORTS = {5060, 5061, 3478, 3479, 3480, 5004, 5005, 10000}  # SIP, STUN, RTP
-    IOT_PORTS = {1883, 8883, 5683, 5684}  # MQTT, CoAP
+class RateTracker:
+    def __init__(self, window=1.0):
+        self.window = window
+        self.timestamps = defaultdict(deque)
 
-    # Check by port first (more reliable)
-    if dst_port in IOT_PORTS or src_port in IOT_PORTS:
-        return 'mMTC'
-    if dst_port in VOIP_PORTS or src_port in VOIP_PORTS or dst_port in GAMING_PORTS or src_port in GAMING_PORTS:
-        return 'URLLC'
-    if dst_port in VIDEO_PORTS or src_port in VIDEO_PORTS:
-        return 'eMBB'
+    def add(self, src_ip: str, ts: float):
+        q = self.timestamps[src_ip]
+        q.append(ts)
+        while q and ts - q[0] > self.window:
+            q.popleft()
 
-    # Fallback to size-based detection
-    if pkt_size > 800:  # Large packets likely to be eMBB
-        return 'eMBB'
-    elif protocol in ['TCP', 'UDP'] and pkt_size < 200:  # Small packets might be URLLC
-        return 'URLLC'
-    else:  # Default to mMTC for everything else
-        return 'mMTC'
+    def pps(self, src_ip: str) -> float:
+        q = self.timestamps[src_ip]
+        return len(q) / self.window if q else 0.0
+
+rate_tracker = RateTracker(window=1.0)
 
 # ==========================================================
 # ML / FALLBACK DETECTOR
 # ==========================================================
-def is_ddos_attack(pkt_size, pps):
+EXPECTED_FEATURES = model.n_features_in_ if model else 0
+
+def build_features(pkt_size: int, pps: float) -> list:
+    base = [
+        1,                # packet_count (dummy)
+        pps,              # packets per second
+        pkt_size / 100,   # avg packet size (scaled)
+        0.5,              # protocol entropy (dummy)
+        0.3,              # src-port entropy (dummy)
+        10.0,             # flow duration (dummy)
+        1,                # SYN flag (dummy)
+        1,                # ACK flag (dummy)
+        1                 # is_tcp (dummy)
+    ]
+    if len(base) > EXPECTED_FEATURES:
+        return base[:EXPECTED_FEATURES]
+    elif len(base) < EXPECTED_FEATURES:
+        return base + [0.0] * (EXPECTED_FEATURES - len(base))
+    return base
+
+def is_ddos_attack(pkt_size: int, pps: float) -> bool:
     if model:
-        features = [1, pps, pkt_size/100, 0.1, pps*0.8, pps,
-                    0.01, 0.001, 0.05, 0.001, 1, 0, 0, 0, 0, 1, 0]
-        pred = model.predict([features])[0]
-        prob = model.predict_proba([features])[0].max()
-        return pred == 1 and prob > 0.7
+        try:
+            feats = build_features(pkt_size, pps)
+            pred = model.predict([feats])[0]
+            prob = model.predict_proba([feats])[0].max()
+            return pred == 1 and prob > 0.7
+        except Exception as e:
+            log.error(f"ML predict error: {e}")
+            return False
     else:
-        # Simple fallback threshold rule
         return pps > 50
 
 # ==========================================================
-# CAPTURE LOOP — FIXED FOR WINDOWS WIFI INTERFACE
+# LIVE-PACKET THROTTLE (max 10 POSTs / sec)
+# ==========================================================
+last_live_ts = 0.0
+LIVE_POST_INTERVAL = 0.1
+
+def throttled_live_post(payload: dict):
+    global last_live_ts
+    now = time.time()
+    if now - last_live_ts >= LIVE_POST_INTERVAL:
+        try:
+            requests.post(NODE_LIVEPACKET, json=payload, timeout=0.1)
+            last_live_ts = now
+        except Exception:
+            pass
+
+# ==========================================================
+# SCAPY CAPTURE LOOP
 # ==========================================================
 def capture_loop():
-    global capture, running
-    log.info(f"📡 STARTING PACKET CAPTURE on Wi-Fi → Host filter: {LAPTOP_IP}")
+    global running
+    log.info(f"STARTING FAST SCAPY CAPTURE on Wi-Fi → dst host {LAPTOP_IP}")
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    def packet_handler(pkt):
+        if not running:
+            return
+        if not pkt.haslayer(IP):
+            return
+
+        ip_layer = pkt[IP]
+        src_ip   = ip_layer.src
+        dst_ip   = ip_layer.dst
+        size     = len(pkt)
+        proto    = ip_layer.proto
+
+        now = time.time()
+        rate_tracker.add(src_ip, now)
+        pps = rate_tracker.pps(src_ip)
+
+        # ---------- PROTOCOL NAME ----------
+        protocol_name = PROTOCOL_MAP.get(proto, f"Proto {proto}")
+
+        # ---------- LIVE PACKET (throttled) ----------
+        throttled_live_post({
+            "srcIP": src_ip,
+            "dstIP": dst_ip,
+            "protocol": protocol_name,        # ← NOW "UDP", "TCP", etc.
+            "packetSize": size,
+            "timestamp": int(now * 1000)
+        })
+
+        # ---------- DDoS DETECTION ----------
+        if is_ddos_attack(size, pps):
+            if block_ip(src_ip):
+                try:
+                    requests.post(NODE_URL, json={
+                        "ip": src_ip,
+                        "reason": f"DDoS Flood ({pps:.0f} pps, {protocol_name})",
+                        "threatLevel": "high",
+                        "timestamp": datetime.now().isoformat()
+                    }, timeout=1)
+                except Exception:
+                    pass
 
     try:
-        # ⚙️ Use the Wi-Fi interface — replace if needed (use 'Wi-Fi', 'Wi-Fi 2', etc.)
-        capture = pyshark.LiveCapture(
-            interface="Wi-Fi",
-            bpf_filter=f"dst host {LAPTOP_IP}"
+        sniff(
+            iface="Wi-Fi",
+            filter=f"dst host {LAPTOP_IP}",
+            prn=packet_handler,
+            store=False,
+            stop_filter=lambda x: not running
         )
     except Exception as e:
-        log.error(f"❌ Pyshark initialization failed: {e}")
+        log.error(f"Scapy capture crashed: {e}")
+    finally:
         running = False
-        return
-
-    packet_count = 0
-    start_time = time.time()
-
-    for pkt in capture.sniff_continuously():
-        if not running:
-            break
-        try:
-            if not hasattr(pkt, 'ip'):
-                continue
-
-            src_ip = pkt.ip.src
-            dst_ip = pkt.ip.dst
-            size = int(pkt.length)
-            protocol = pkt.highest_layer
-
-            packet_count += 1
-            elapsed = time.time() - start_time
-            pps = packet_count / elapsed if elapsed > 0 else 0
-
-            # ==========================================
-            # SEND LIVE PACKET TO NODE BACKEND
-            # ==========================================
-            try:
-                # Get source and destination ports if available
-                src_port = None
-                dst_port = None
-                if hasattr(pkt, 'tcp'):
-                    src_port = int(getattr(pkt.tcp, 'srcport', 0))
-                    dst_port = int(getattr(pkt.tcp, 'dstport', 0))
-                elif hasattr(pkt, 'udp'):
-                    src_port = int(getattr(pkt.udp, 'srcport', 0))
-                    dst_port = int(getattr(pkt.udp, 'dstport', 0))
-                
-                # Determine network slice with port information
-                network_slice = get_network_slice(size, protocol, src_port, dst_port)
-                
-                # Check if packet is malicious (using the same logic as DDoS detection)
-                is_malicious = is_ddos_attack(size, pps)
-                detection_reason = None
-                confidence = 0.0
-                
-                if is_malicious:
-                    detection_reason = f"High packet rate: {pps:.0f} pps"
-                    confidence = min(pps / 100, 0.99)  # Higher PPS = higher confidence
-                
-                # Prepare packet data
-                packet_data = {
-                    "srcIP": src_ip,
-                    "dstIP": dst_ip,
-                    "protocol": protocol,
-                    "packetSize": size,
-                    "srcPort": src_port,
-                    "dstPort": dst_port,
-                    "network_slice": network_slice,
-                    "isMalicious": is_malicious,
-                    "timestamp": int(time.time() * 1000)  # Current timestamp in milliseconds
-                }
-                
-                # Add detection info if malicious
-                if is_malicious:
-                    packet_data.update({
-                        "detectionReason": detection_reason,
-                        "confidence": round(confidence, 2)
-                    })
-                
-                # Send to frontend
-                requests.post(NODE_LIVEPACKET, json=packet_data, timeout=0.1)
-            except Exception as e:
-                log.debug(f"Live packet send failed: {e}")
-
-            # ==========================================
-            # DDoS DETECTION
-            # ==========================================
-            if is_ddos_attack(size, pps):
-                if block_ip(src_ip):
-                    try:
-                        requests.post(NODE_URL, json={
-                            "ip": src_ip,
-                            "reason": f"DDoS Flood ({pps:.0f} pps)",
-                            "threatLevel": "high",
-                            "timestamp": datetime.now().isoformat()
-                        }, timeout=1)
-                    except Exception as e:
-                        log.debug(f"Notify Node failed: {e}")
-
-        except Exception:
-            continue
+        log.info("CAPTURE THREAD EXITED")
 
 # ==========================================================
 # API ROUTES
 # ==========================================================
 @app.post("/start-capture")
 def start_capture():
-    global running, capture
+    global running
     if running:
         return jsonify({"status": "already_running"})
-    try:
-        running = True
-        threading.Thread(target=capture_loop, daemon=True).start()
-        log.info("✅ PACKET CAPTURE STARTED")
-        return jsonify({"status": "capturing", "ip": LAPTOP_IP})
-    except Exception as e:
-        running = False
-        log.error(f"❌ Failed to start capture: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
-
+    running = True
+    threading.Thread(target=capture_loop, daemon=True).start()
+    log.info("PACKET CAPTURE STARTED")
+    return jsonify({"status": "capturing", "ip": LAPTOP_IP})
 
 @app.post("/stop-capture")
 def stop_capture():
     global running
     running = False
-    if capture:
-        try:
-            capture.close()
-        except:
-            pass
-    log.info("🛑 CAPTURE STOPPED")
+    log.info("CAPTURE STOPPED")
     return jsonify({"status": "stopped"})
-
 
 @app.get("/health")
 def health():
     try:
         ryu_ok = requests.get(f"{RYU_URL}/stats/switches", timeout=2).ok
-    except:
+    except Exception:
         ryu_ok = False
     return jsonify({
         "status": "LIVE",
@@ -283,9 +263,9 @@ def health():
         "ryu_reachable": ryu_ok,
         "blocked_ips": len(BLOCKED_IPS),
         "ai_active": model is not None,
-        "capturing": running
+        "capturing": running,
+        "model_features": model.n_features_in_ if model else 0
     })
-
 
 @app.post("/unblock")
 def unblock():
@@ -297,18 +277,18 @@ def unblock():
                 "match": {"ipv4_src": ip}
             }, timeout=3)
             BLOCKED_IPS.discard(ip)
-            log.info(f"✅ UNBLOCKED {ip}")
+            log.info(f"UNBLOCKED {ip}")
         except Exception as e:
             log.error(f"Failed to unblock {ip}: {e}")
     return jsonify({"success": True})
 
 # ==========================================================
-# MAIN ENTRY
+# MAIN
 # ==========================================================
 if __name__ == "__main__":
-    log.info("🚀 SENTINEL AI LIVE SYSTEM STARTED")
+    log.info("SENTINEL AI LIVE SYSTEM STARTED")
     log.info(f"Laptop IP → {LAPTOP_IP}")
     log.info(f"Node Backend → {NODE_URL}")
     log.info(f"Ryu Controller → {RYU_URL}")
-    log.info("Use: POST http://localhost:5001/start-capture to begin.")
+    log.info("POST http://localhost:5001/start-capture to begin.")
     app.run(host="0.0.0.0", port=5001, debug=False)
