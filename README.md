@@ -23,12 +23,44 @@ An advanced, real-time system designed for intelligent DDoS detection and mitiga
 ```
 Ly-Project/
 │
-├── backend/     # Node.js REST API for dashboard and model communication
-├── frontend/    # Vite + React based dashboard UI
-├── model/       # Python ML models and Flask API for DDoS detection
-│   └── app/     # Flask app and ML scripts (run app.py here)
+├── backend/                 # Node.js backend API
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── utils/
+│   ├── config/
+│   ├── services/
+│   ├── tests/
+│   └── index.js
+│
+├── frontend/                # React + Vite frontend UI
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── hooks/
+│   │   ├── assets/
+│   │   ├── utils/
+│   │   ├── api/
+│   │   └── App.jsx/tsx
+│   ├── public/
+│   └── vite.config.js
+│
+├── model/                   # Python ML Model (Flask API)
+│   ├── app/
+│   │   ├── ml/
+│   │   ├── api/
+│   │   ├── utils/
+│   │   └── app.py
+│   ├── tests/
+│   └── requirements.txt
+│
+├── scripts/                 # (Optional) Helper dev scripts
+├── config/                  # (Optional) Shared/global settings
+├── docs/                    # (Optional) Documentation, diagrams, papers
 ├── .gitignore
-└── README.md
+├── README.md
+├── LICENSE
+└── docker-compose.yml       # (Optional) Container orchestration
 ```
 
 ---
