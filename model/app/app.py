@@ -1,3 +1,9 @@
+<<<<<<< HEAD
+=======
+# ==========================================================
+# model/app.py — SENTINEL AI (Scapy + Protocol Names)
+# ==========================================================
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -38,6 +44,7 @@ log.info(f"LAPTOP IP AUTO DETECTED → {LAPTOP_IP}")
 # ==========================================================
 # CONFIGURATION
 # ==========================================================
+<<<<<<< HEAD
 # NOTE: update this IP if your Mininet VM IP changes
 RYU_URL        = "http://192.168.56.101:8080"
 
@@ -67,6 +74,30 @@ PROTOCOL_MAP = {
     # Add more as needed
 }
 
+=======
+RYU_URL        = "http://192.168.56.101:8080"
+NODE_HOST      = "localhost"
+NODE_URL       = f"http://{NODE_HOST}:3000/api/emit-blocked-ip"
+NODE_LIVEPACKET= f"http://{NODE_HOST}:3000/api/live-packet"
+
+MODEL_PATH = "../models/randomforest_enhanced.pkl"
+BLOCKED_IPS    = set()
+running        = False
+
+# === PROTOCOL NUMBER → NAME MAPPING ===
+PROTOCOL_MAP = {
+    1:  "ICMP",
+    2:  "IGMP",
+    6:  "TCP",
+    17: "UDP",
+    89: "OSPF",
+    41: "IPv6",
+    50: "ESP",
+    51: "AH",
+    # Add more as needed
+}
+
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
 # === LOAD ML MODEL + PRINT EXPECTED FEATURES ===
 model = None
 try:
@@ -82,9 +113,12 @@ except Exception as e:
 # RYU CONTROLLER: BLOCK / UNBLOCK
 # ==========================================================
 def block_ip(ip: str) -> bool:
+<<<<<<< HEAD
     """
     Install a DROP flow in Ryu to block all IPv4 traffic from `ip`.
     """
+=======
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
     if ip in BLOCKED_IPS:
         return True
 
@@ -115,6 +149,7 @@ def block_ip(ip: str) -> bool:
         log.error(f"RYU CONTROLLER UNREACHABLE: {e}")
     return False
 
+<<<<<<< HEAD
 
 def unblock_ip(ip: str) -> bool:
     """
@@ -159,6 +194,22 @@ class RateTracker:
         while q and ts - q[0] > self.window:
             q.popleft()
 
+=======
+# ==========================================================
+# RATE TRACKER (per source IP) → real PPS for DDoS check
+# ==========================================================
+class RateTracker:
+    def __init__(self, window=1.0):
+        self.window = window
+        self.timestamps = defaultdict(deque)
+
+    def add(self, src_ip: str, ts: float):
+        q = self.timestamps[src_ip]
+        q.append(ts)
+        while q and ts - q[0] > self.window:
+            q.popleft()
+
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
     def pps(self, src_ip: str) -> float:
         q = self.timestamps[src_ip]
         return len(q) / self.window if q else 0.0
@@ -199,7 +250,10 @@ def is_ddos_attack(pkt_size: int, pps: float) -> bool:
             log.error(f"ML predict error: {e}")
             return False
     else:
+<<<<<<< HEAD
         # Simple fallback: treat > 50 pps as DDoS
+=======
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
         return pps > 50
 
 def is_ddos_attack_for_ip(src_ip: str, pkt_size: int, pps: float, simulated: bool = False) -> bool:
@@ -263,6 +317,7 @@ def capture_loop():
         throttled_live_post({
             "srcIP": src_ip,
             "dstIP": dst_ip,
+<<<<<<< HEAD
             "protocol": protocol_name,        # ← "UDP", "TCP", etc.
             "packetSize": size,
             "timestamp": int(now * 1000),
@@ -271,14 +326,27 @@ def capture_loop():
 
         # ---------- DDoS DETECTION ----------
         if is_ddos_attack_for_ip(src_ip, size, pps, simulated=False):
+=======
+            "protocol": protocol_name,        # ← NOW "UDP", "TCP", etc.
+            "packetSize": size,
+            "timestamp": int(now * 1000)
+        })
+
+        # ---------- DDoS DETECTION ----------
+        if is_ddos_attack(size, pps):
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
             if block_ip(src_ip):
                 try:
                     requests.post(NODE_URL, json={
                         "ip": src_ip,
                         "reason": f"DDoS Flood ({pps:.0f} pps, {protocol_name})",
                         "threatLevel": "high",
+<<<<<<< HEAD
                         "timestamp": datetime.now().isoformat(),
                         "isSimulated": False
+=======
+                        "timestamp": datetime.now().isoformat()
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
                     }, timeout=1)
                 except Exception:
                     pass
@@ -404,11 +472,18 @@ def start_capture():
     global running
     if running:
         return jsonify({"status": "already_running"})
+<<<<<<< HEAD
     running = True    # start flag
     threading.Thread(target=capture_loop, daemon=True).start()
     log.info("PACKET CAPTURE STARTED")
     return jsonify({"status": "capturing", "ip": LAPTOP_IP})
 
+=======
+    running = True
+    threading.Thread(target=capture_loop, daemon=True).start()
+    log.info("PACKET CAPTURE STARTED")
+    return jsonify({"status": "capturing", "ip": LAPTOP_IP})
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
 
 @app.post("/stop-capture")
 def stop_capture():
@@ -416,7 +491,6 @@ def stop_capture():
     running = False
     log.info("CAPTURE STOPPED")
     return jsonify({"status": "stopped"})
-
 
 @app.get("/health")
 def health():
@@ -434,15 +508,29 @@ def health():
         "model_features": model.n_features_in_ if model else 0
     })
 
-
 @app.post("/unblock")
 def unblock():
+<<<<<<< HEAD
     data = request.get_json(force=True) or {}
     ip = data.get("ip")
     success = False
     if ip:
         success = unblock_ip(ip)
     return jsonify({"success": success})
+=======
+    ip = request.json.get("ip")
+    if ip and ip in BLOCKED_IPS:
+        try:
+            requests.post(f"{RYU_URL}/stats/flowentry/delete", json={
+                "dpid": "0000000000000001",
+                "match": {"ipv4_src": ip}
+            }, timeout=3)
+            BLOCKED_IPS.discard(ip)
+            log.info(f"UNBLOCKED {ip}")
+        except Exception as e:
+            log.error(f"Failed to unblock {ip}: {e}")
+    return jsonify({"success": True})
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
 
 # ==========================================================
 # MAIN
@@ -453,4 +541,8 @@ if __name__ == "__main__":
     log.info(f"Node Backend → {NODE_URL}")
     log.info(f"Ryu Controller → {RYU_URL}")
     log.info("POST http://localhost:5001/start-capture to begin.")
+<<<<<<< HEAD
     app.run(host="0.0.0.0", port=5001, debug=False)
+=======
+    app.run(host="0.0.0.0", port=5001, debug=False)
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592

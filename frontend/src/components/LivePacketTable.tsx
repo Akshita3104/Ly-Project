@@ -20,6 +20,24 @@ const getProtocolColor = (protocol: string) => {
   return PROTOCOL_COLORS[protocol] || PROTOCOL_COLORS.default;
 };
 
+// === PROTOCOL → COLOR MAPPING ===
+const PROTOCOL_COLORS: Record<string, string> = {
+  TCP:   'bg-emerald-600 text-white',
+  UDP:   'bg-blue-600 text-white',
+  ICMP:  'bg-yellow-600 text-white',
+  IGMP:  'bg-orange-600 text-white',
+  OSPF:  'bg-purple-600 text-white',
+  ESP:   'bg-red-600 text-white',
+  AH:    'bg-pink-600 text-white',
+  IPv6:  'bg-indigo-600 text-white',
+  // Fallback for unknown
+  default: 'bg-gray-600 text-white'
+};
+
+const getProtocolColor = (protocol: string) => {
+  return PROTOCOL_COLORS[protocol] || PROTOCOL_COLORS.default;
+};
+
 export default function LivePacketTable({
   packets,
   capturing
@@ -63,6 +81,7 @@ export default function LivePacketTable({
             const protoColor = getProtocolColor(p.protocol);
 
             return (
+<<<<<<< HEAD
               <tr 
                 key={idx} 
                 className={`transition border-b ${
@@ -77,6 +96,10 @@ export default function LivePacketTable({
                   {p.isMalicious && p.packet_data?.simulated && (
                     <span className="absolute -left-1 top-1/2 transform -translate-y-1/2 w-1 h-1/2 bg-purple-500 rounded-r"></span>
                   )}
+=======
+              <tr key={idx} className="hover:bg-cyan-900/40 transition border-b border-gray-700">
+                <td className="px-4 py-2 text-gray-400 text-xs">
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
                   {new Date(p.timestamp).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -84,6 +107,7 @@ export default function LivePacketTable({
                     hour12: true
                   })}
                 </td>
+<<<<<<< HEAD
                 <td className="px-4 py-2 font-mono">
                   <div className="flex items-center gap-1">
                     {p.isMalicious && p.packet_data?.simulated && (
@@ -97,6 +121,9 @@ export default function LivePacketTable({
                     </span>
                   </div>
                 </td>
+=======
+                <td className="px-4 py-2 text-orange-400">{p.srcIP}</td>
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
                 <td className="px-4 py-2 text-purple-300">{p.dstIP}</td>
                 <td className="px-4 py-2">
                   <span className={`px-2 py-1 rounded font-semibold text-xs ${protoColor}`}>
@@ -104,6 +131,7 @@ export default function LivePacketTable({
                   </span>
                 </td>
                 <td className="px-4 py-2">
+<<<<<<< HEAD
                   <span className={`px-2 py-1 rounded text-white text-xs ${
                     p.network_slice === 'eMBB' ? 'bg-purple-700/70' : 
                     p.network_slice === 'URLLC' ? 'bg-blue-600/70' : 'bg-green-600/70'
@@ -140,6 +168,18 @@ export default function LivePacketTable({
                         <span className="ml-1 opacity-80">({((1 - (p.confidence || 0)) * 100).toFixed(0)}%)</span>
                       )}
                     </span>
+=======
+                  <span className="px-2 py-1 bg-purple-700/70 rounded text-white text-xs">
+                    {p.network_slice || 'eMBB'}
+                  </span>
+                </td>
+                <td className="px-4 py-2 text-gray-200">{p.packetSize}B</td>
+                <td className="px-4 py-2">
+                  {p.isMalicious ? (
+                    <span className="px-2 py-1 bg-red-500/80 rounded text-white text-xs">Malicious</span>
+                  ) : (
+                    <span className="px-2 py-1 bg-green-500/80 rounded text-white text-xs">Normal</span>
+>>>>>>> 3e62b2c34af6f423f3fca6741ca00a6de7469592
                   )}
                 </td>
               </tr>
