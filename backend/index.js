@@ -1,10 +1,11 @@
-// backend/index.js - FINAL VERSION
+// backend/index.js - COMPLETE (with attack-detector middleware wired)
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const axios = require('axios');
 const os = require('os');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -19,21 +20,63 @@ const io = new Server(server, {
   transports: ['websocket', 'polling']
 });
 
+// Make io available to middleware via app.get('io')
+app.set("io", io);
+
+// ---------------- GLOBAL MIDDLEWARE ----------------
+// Attach JSON parser and CORS first
 app.use(cors({
   origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
 
+// Protect capture control from simulated clients (ignore X-Simulated-Attack for start/stop)
+app.use((req, res, next) => {
+  if ((req.method === "POST") && (req.path === "/api/start-capture" || req.path === "/api/stop-capture")) {
+    if (req.get("X-Simulated-Attack") === "true") {
+      console.log("🔒 Ignoring simulated client request to start/stop capture");
+      return res.status(200).json({ success: false, message: "Simulated clients cannot start/stop capture" });
+    }
+  }
+  next();
+});
+
+// Load and attach attack detector middleware BEFORE routes (optional; fails gracefully)
+try {
+  const attackDetector = require(path.join(__dirname, 'middleware', 'attack-detector'));
+  app.use(attackDetector);
+  console.log('🔒 Attack detector middleware attached');
+} catch (err) {
+  console.warn('⚠️ Could not attach attack-detector middleware:', err.message);
+}
+
 // ---------------- CONFIG ----------------
 const FLASK_URL = 'http://localhost:5001';   // Flask capture system
-const LAPTOP_IP = '10.0.62.179';             // Detected Laptop IP (from Flask logs)
+const LAPTOP_IP = getLaptopIp();             // detect or set statically if you prefer
 
 // ---------------- STATE ----------------
 let blockedIPs = [];
 let maliciousPackets = [];
 let isCapturing = false;
 let packetCount = 0;
+
+// ---------------- HELPERS ----------------
+function getLaptopIp() {
+  try {
+    const ifaces = os.networkInterfaces();
+    for (const iface of Object.values(ifaces)) {
+      for (const info of iface) {
+        if (info.family === 'IPv4' && !info.internal) {
+          return info.address;
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return '127.0.0.1';
+}
 
 // ---------------- HEALTH ----------------
 app.get('/api/health', (req, res) => {

@@ -18,6 +18,11 @@ export interface Packet {
   isMalicious?: boolean;
   detectionReason?: string;
   confidence?: number;
+  packet_data?: {
+    simulated?: boolean;
+    avg_packet_size?: number;
+    [key: string]: any;
+  };
 }
 
 export default function App() {
@@ -67,57 +72,93 @@ export default function App() {
     // Listen for new packets and detection results
     socket.on('new_packet', (pkt: any) => {
       setPackets(p => p + 1);
-      const curPps = Math.floor(Math.random() * 300 + 100);
+      
+      // Calculate packets per second (simplified)
+      const curPps = Math.floor(Math.random() * 50) + 10; // More realistic PPS
       setPps(curPps);
 
-      // Check if this packet is in the malicious packets list
+      // Process packet data
       const isMalicious = pkt.isMalicious || false;
+      const isSimulated = pkt.packet_data?.simulated || false;
+      const timestamp = pkt.timestamp || Date.now();
+      const packetSize = pkt.packetSize || 1024; // Default size if not provided
+      const detectionReason = pkt.detectionReason || 
+        (isSimulated ? 'Simulated DDoS Attack (locust)' : 'Suspicious activity');
       
-      setLivePackets(prev => [
-        {
-          timestamp: pkt.timestamp || Date.now(),
-          srcIP: pkt.srcIP,
-          dstIP: pkt.dstIP,
-          protocol: pkt.protocol,
-          packetSize: pkt.packetSize,
-          network_slice: pkt.network_slice || 'eMBB',
-          isMalicious: isMalicious,
-          detectionReason: pkt.detectionReason,
-          confidence: pkt.confidence
-        },
-        ...prev.slice(0, 9),
-      ]);
+      // Update live packets table
+      const newPacket: Packet = {
+        timestamp,
+        srcIP: pkt.srcIP || '0.0.0.0',
+        dstIP: pkt.dstIP || '0.0.0.0',
+        protocol: pkt.protocol || 'TCP',
+        packetSize,
+        network_slice: pkt.network_slice || 'eMBB',
+        isMalicious,
+        detectionReason,
+        confidence: pkt.confidence,
+        packet_data: pkt.packet_data || {}
+      };
       
-      // If malicious, also add to blocked IPs
-      if (isMalicious) {
-        setBlockedIPs(prev => [
-          {
-            ip: pkt.srcIP,
-            timestamp: new Date().toISOString(),
-            reason: pkt.detectionReason || 'Suspicious activity',
-            threatLevel: 'high',
-            mitigation: 'SDN DROP Rule'
-          },
-          ...prev
-        ]);
-      }
-
+      setLivePackets(prev => [newPacket, ...prev.slice(0, 19)]); // Keep last 20 packets
+      
+      // Update traffic data for the graph
       setTrafficData(prev => {
-        const newData = [...prev.slice(-29)];
-        const isMalicious = pkt.isMalicious || false;
+        const now = Math.floor(Date.now() / 1000); // Current time in seconds
+        const lastPoint = prev[prev.length - 1];
         
-        // Get the last data point or create a new one
-        const lastPoint = newData[newData.length - 1] || { time: newData.length, normalPps: 0, maliciousPps: 0 };
+        // If we don't have data or it's been more than 1 second, add a new data point
+        if (!lastPoint || now > lastPoint.time) {
+          const newPoint = {
+            time: now,
+            normalPps: isMalicious ? 0 : 1,
+            maliciousPps: isMalicious ? 1 : 0,
+            simulatedPps: isMalicious && isSimulated ? 1 : 0
+          };
+          
+          console.log('📈 New data point:', newPoint);
+          return [...prev.slice(-29), newPoint]; // Keep last 30 seconds
+        }
         
-        // Create a new data point
-        newData.push({
-          time: newData.length,
-          normalPps: isMalicious ? lastPoint.normalPps : (lastPoint.normalPps + 1),
-          maliciousPps: isMalicious ? (lastPoint.maliciousPps + 1) : lastPoint.maliciousPps
+        // Otherwise, update the last point
+        const updatedLastPoint = {
+          ...lastPoint,
+          normalPps: isMalicious ? lastPoint.normalPps : lastPoint.normalPps + 1,
+          maliciousPps: isMalicious ? lastPoint.maliciousPps + 1 : lastPoint.maliciousPps,
+          simulatedPps: isMalicious && isSimulated ? (lastPoint.simulatedPps || 0) + 1 : (lastPoint.simulatedPps || 0)
+        };
+        
+        return [...prev.slice(0, -1), updatedLastPoint];
+      });
+      
+      // If malicious, add to blocked IPs (but only if not already blocked)
+      if (isMalicious) {
+        console.log(`🚨 Malicious packet detected from ${pkt.srcIP}`, {
+          isSimulated,
+          reason: detectionReason,
+          confidence: pkt.confidence
         });
         
-        return newData;
-      });
+        setBlockedIPs(prev => {
+          // Check if IP is already in the blocked list
+          const isAlreadyBlocked = prev.some(ip => ip.ip === pkt.srcIP);
+          
+          if (!isAlreadyBlocked) {
+            const blockedIP = {
+              ip: pkt.srcIP,
+              timestamp: new Date().toISOString(),
+              reason: detectionReason,
+              threatLevel: isSimulated ? 'simulated' : 'high',
+              mitigation: 'SDN DROP Rule',
+              isSimulated,
+              confidence: pkt.confidence
+            };
+            
+            console.log('📝 Adding to blocked IPs:', blockedIP);
+            return [blockedIP, ...prev];
+          }
+          return prev;
+        });
+      }
     });
 
     // 🧱 Blocked IP listeners

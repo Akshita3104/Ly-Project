@@ -1,6 +1,6 @@
 // ipDetectionController.js
 const axios = require('axios');
-const { ML_MODEL_URL, ABUSEIPDB_API_KEY } = process.env;
+const { ML_MODEL_URL, ABUSEIPDB_API_KEY, RYU_URL } = process.env;
 
 // Track IP behavior
 const ipBehavior = new Map();
@@ -12,6 +12,9 @@ const mlClient = axios.create({
   timeout: 2000,
   headers: { 'Content-Type': 'application/json' }
 });
+
+// Ryu Controller URL (same as in app.py)
+const ryuBaseUrl = RYU_URL || 'http://192.168.56.101:8080';
 
 // Update IP behavior with new request data
 function updateIpBehavior(ip, requestData) {
@@ -30,9 +33,9 @@ function updateIpBehavior(ip, requestData) {
   behavior.lastRequest = requestData;
 
   // Clean up old entries
-  for (const [ip, data] of ipBehavior.entries()) {
+  for (const [addr, data] of ipBehavior.entries()) {
     if (now - data.lastSeen > IP_BEHAVIOR_TTL) {
-      ipBehavior.delete(ip);
+      ipBehavior.delete(addr);
     }
   }
 
@@ -51,7 +54,7 @@ function shouldBlockIP(ip, detectionResult) {
   // Check detection result
   if (detectionResult.prediction === 'ddos' || detectionResult.isDDoS) {
     behavior.suspiciousCount++;
-    
+
     // Block if multiple suspicious activities detected
     if (behavior.suspiciousCount >= 3) {
       behavior.isBlocked = true;
@@ -60,12 +63,53 @@ function shouldBlockIP(ip, detectionResult) {
   }
 
   // Check request rate (more than 100 requests per minute)
-  const requestRate = (behavior.requestCount / ((behavior.lastSeen - behavior.firstSeen) / 60000)) || 0;
+  const requestRate =
+    (behavior.requestCount /
+      ((behavior.lastSeen - behavior.firstSeen) / 60000)) || 0;
   if (requestRate > 100) {
     behavior.isBlocked = true;
     return true;
   }
 
+  return false;
+}
+
+// Block IP in the network via Ryu SDN controller
+async function blockIP(ip, reason, isSimulated = false) {
+  console.log(
+    `Blocking IP ${ip}: ${reason} ${isSimulated ? '[SIMULATED]' : ''}`
+  );
+
+  // Update local behavior map
+  const behavior = ipBehavior.get(ip) || {};
+  behavior.isBlocked = true;
+  behavior.blockedAt = new Date().toISOString();
+  behavior.blockReason = reason;
+  ipBehavior.set(ip, behavior);
+
+  // Construct SDN DROP rule (same as Python block_ip in app.py)
+  const rule = {
+    dpid: '0000000000000001',
+    priority: 60000,
+    match: { ipv4_src: ip },
+    actions: []
+  };
+
+  try {
+    const url = `${ryuBaseUrl}/stats/flowentry/add`;
+    const resp = await axios.post(url, rule, { timeout: 3000 });
+    if (resp.status >= 200 && resp.status < 300) {
+      console.log(`Ryu SDN rule installed for ${ip}`);
+      return true;
+    }
+    console.error(
+      `Ryu responded with status ${resp.status} while blocking ${ip}`
+    );
+  } catch (err) {
+    console.error(`Failed to contact Ryu controller for ${ip}:`, err.message);
+  }
+
+  // Even if Ryu call fails, we consider it logically blocked in behavior map
   return false;
 }
 
@@ -92,12 +136,12 @@ const detectAndMitigate = async (req, res, next) => {
     });
 
     const detectionResult = mlResponse.data;
-    
+
     // Check if IP should be blocked
     if (shouldBlockIP(ip, detectionResult)) {
-      // Trigger mitigation
-      await blockIP(ip, 'Suspicious activity detected');
-      
+      // Trigger mitigation via Ryu
+      await blockIP(ip, 'Suspicious activity detected', false);
+
       // Emit event for real-time updates
       const io = req.app.get('io');
       if (io) {
@@ -105,7 +149,10 @@ const detectAndMitigate = async (req, res, next) => {
           ip,
           timestamp: new Date().toISOString(),
           reason: 'Suspicious activity detected',
-          detectionResult
+          detectionResult,
+          threatLevel: 'high',
+          mitigation: 'SDN DROP Rule',
+          isSimulated: false
         });
       }
 
@@ -124,34 +171,11 @@ const detectAndMitigate = async (req, res, next) => {
       ip,
       timestamp: new Date().toISOString()
     });
-
   } catch (error) {
     console.error('IP Detection Error:', error);
     next(error);
   }
 };
-
-// Block IP in the network
-async function blockIP(ip, reason) {
-  // Implementation depends on your network infrastructure
-  // This is a placeholder - you'll need to implement this based on your setup
-  console.log(`Blocking IP ${ip}: ${reason}`);
-  
-  // Example: Add to blocked IPs map
-  const behavior = ipBehavior.get(ip) || {};
-  behavior.isBlocked = true;
-  behavior.blockedAt = new Date().toISOString();
-  behavior.blockReason = reason;
-  ipBehavior.set(ip, behavior);
-  
-  // TODO: Add actual network blocking logic here
-  // This could involve:
-  // 1. Updating firewall rules
-  // 2. Calling your network controller API
-  // 3. Updating rate limiting rules
-  
-  return true;
-}
 
 module.exports = {
   detectAndMitigate,
