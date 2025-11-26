@@ -8,6 +8,9 @@ import socket
 from datetime import datetime
 from collections import defaultdict, deque
 
+# ---------- Network Slicing ----------
+from network_slicing import get_network_slice
+
 # ---------- 3rd party ----------
 from scapy.all import sniff, IP          # <-- FAST capture
 import joblib
@@ -234,7 +237,7 @@ def throttled_live_post(payload: dict):
             pass
 
 # ==========================================================
-# SCAPY CAPTURE LOOP
+# SCAPY CAPTURE LOOP (REAL TRAFFIC)
 # ==========================================================
 def capture_loop():
     global running
@@ -259,13 +262,25 @@ def capture_loop():
         # ---------- PROTOCOL NAME ----------
         protocol_name = PROTOCOL_MAP.get(proto, f"Proto {proto}")
 
+        # ---------- NETWORK SLICING (REAL TRAFFIC) ----------
+        try:
+            slice_info = get_network_slice(size, protocol_name, pps)
+            network_slice = slice_info["slice"]
+            slice_priority = slice_info["priority"]
+        except Exception as e:
+            log.error(f"network slicing error: {e}")
+            network_slice = "eMBB"
+            slice_priority = 2
+
         # ---------- LIVE PACKET (throttled) ----------
         throttled_live_post({
             "srcIP": src_ip,
             "dstIP": dst_ip,
-            "protocol": protocol_name,        # ← "UDP", "TCP", etc.
+            "protocol": protocol_name,        # "UDP", "TCP", etc.
             "packetSize": size,
             "timestamp": int(now * 1000),
+            "network_slice": network_slice,   # slice for frontend
+            "slice_priority": slice_priority  # optional
             # real captured traffic → no detection flags here
         })
 
@@ -273,13 +288,20 @@ def capture_loop():
         if is_ddos_attack_for_ip(src_ip, size, pps, simulated=False):
             if block_ip(src_ip):
                 try:
-                    requests.post(NODE_URL, json={
-                        "ip": src_ip,
-                        "reason": f"DDoS Flood ({pps:.0f} pps, {protocol_name})",
-                        "threatLevel": "high",
-                        "timestamp": datetime.now().isoformat(),
-                        "isSimulated": False
-                    }, timeout=1)
+                    # also send slice info to Node for "Blocked Attackers" table
+                    requests.post(
+                        NODE_URL,
+                        json={
+                            "ip": src_ip,
+                            "reason": f"DDoS Flood ({pps:.0f} pps, {protocol_name}, slice={network_slice})",
+                            "threatLevel": "high",
+                            "timestamp": datetime.now().isoformat(),
+                            "isSimulated": False,
+                            "network_slice": network_slice,
+                            "slice_priority": slice_priority,
+                        },
+                        timeout=1,
+                    )
                 except Exception:
                     pass
 
@@ -337,12 +359,21 @@ def simulate_packet():
 
         packet_size = int(data.get("packetSize") or data.get("size") or 0)
         ts = float(data.get("timestamp") / 1000.0) if data.get("timestamp") else time.time()
-        network_slice = data.get("network_slice", "eMBB")
         proto = data.get("protocol", "UDP")
 
         # Update rate tracker (for PPS in reason string)
         rate_tracker.add(src_ip, ts)
         pps = rate_tracker.pps(src_ip)
+
+        # ---------- NETWORK SLICING (SIMULATED TRAFFIC) ----------
+        try:
+            slice_info = get_network_slice(packet_size, proto, pps)
+            network_slice = slice_info["slice"]
+            slice_priority = slice_info["priority"]
+        except Exception as e:
+            log.error(f"network slicing (simulate) error: {e}")
+            network_slice = "eMBB"
+            slice_priority = 2
 
         # ---- SEND LIVE PACKET → Node (for LivePacketTable) ----
         live_payload = {
@@ -355,6 +386,7 @@ def simulate_packet():
             "confidence": 0.99,
             "packet_data": {"simulated": True},
             "network_slice": network_slice,
+            "slice_priority": slice_priority,
         }
         throttled_live_post(live_payload)
 
@@ -372,10 +404,12 @@ def simulate_packet():
                         NODE_URL,
                         json={
                             "ip": src_ip,
-                            "reason": f"Simulated DDoS Attack (demo) ({pps:.0f} pps)",
+                            "reason": f"Simulated DDoS Attack (demo) ({pps:.0f} pps, slice={network_slice})",
                             "threatLevel": "simulated",
                             "timestamp": datetime.now().isoformat(),
                             "isSimulated": True,
+                            "network_slice": network_slice,
+                            "slice_priority": slice_priority,
                         },
                         timeout=1,
                     )
@@ -383,7 +417,7 @@ def simulate_packet():
                     pass
 
         log.warning(
-            f"[SIMULATE] FORCED DDOS for {src_ip} (pps={pps:.1f}, simulated={is_simulated}, blocked={blocked})"
+            f"[SIMULATE] FORCED DDOS for {src_ip} (pps={pps:.1f}, simulated={is_simulated}, blocked={blocked}, slice={network_slice})"
         )
         return jsonify(
             {
@@ -391,6 +425,8 @@ def simulate_packet():
                 "pps": pps,
                 "blocked": blocked,
                 "simulated": is_simulated,
+                "network_slice": network_slice,
+                "slice_priority": slice_priority,
             }
         )
 
