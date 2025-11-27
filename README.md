@@ -71,37 +71,33 @@ flowchart LR
     BE -- Updates --> UI
     ML -- Malicious Traffic Detected --> Ryu["Ryu Controller"]
     Ryu -- Flow Rules --> Mininet
-
-    %% Styling
-    classDef frontend fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    classDef backend fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    classDef ml fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
-    classDef sdn fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    class UI frontend
-    class BE backend
-    class ML ml
-    class Ryu,Mininet sdn
 ```
 
 ### Component Interactions
 
 1. **Frontend (React Dashboard)**
-   - Visualizes real-time traffic and alerts
-   - Allows user interaction and monitoring
+   - Captures and visualizes real-time network traffic
+   - Sends captured traffic to the backend for analysis
+   - Displays detection results and mitigation alerts
 
 2. **Backend (Node.js)**
-   - Handles API requests and WebSocket updates
-   - Aggregates and forwards analysis results
+   - Receives traffic data from the frontend
+   - Forwards data to the ML Service for detection
+   - Receives detection/mitigation results from ML Service
+   - Updates the frontend with analysis and mitigation status
 
 3. **ML Service (Flask)**
-   - Receives flow stats from Ryu
-   - Analyzes traffic for anomalies
-   - Only if malicious traffic is detected, sends mitigation signal to Ryu
+   - Receives traffic data from the backend
+   - Analyzes traffic for anomalies (normal/malicious)
+   - If traffic is normal, sends result back to backend
+   - If malicious, sends mitigation request to Ryu Controller via Mininet
+   - Receives mitigation response from Ryu Controller
+   - Forwards mitigation status/result to backend
 
 4. **Ryu Controller (SDN)**
-   - Receives mitigation instructions from ML
+   - Receives mitigation instructions from ML Service
    - Installs flow rules in Mininet to block/mitigate malicious traffic
-   - Collects flow stats and manages network
+   - Sends mitigation response/status to ML Service
 
 5. **Mininet Network**
    - Emulates the SDN environment
@@ -110,16 +106,19 @@ flowchart LR
 ### Data Flow Sequence
 
 1. **Normal Traffic Flow**
-   - Mininet forwards all network traffic directly to the ML Service (Flask).
-   - ML Service analyzes the traffic in real-time.
-   - If traffic is normal, results are sent to the Backend, which updates the Frontend dashboard.
+   - Frontend captures network traffic and sends it to the backend.
+   - Backend forwards the traffic data to the ML Service.
+   - ML Service analyzes the traffic:
+     - If traffic is normal, ML Service sends result back to backend.
+     - Backend updates the frontend dashboard with the normal status.
 
 2. **DDoS Detection & Mitigation**
-   - If and only if the ML Service detects malicious traffic:
-     - ML sends a mitigation instruction to the Ryu Controller.
-     - Ryu installs blocking rules in Mininet to mitigate the attack.
-     - Malicious traffic is blocked at the network level.
-   - The Backend and Frontend are updated with mitigation status.
+   - If ML Service detects malicious traffic:
+     - ML Service sends a mitigation request to the Ryu Controller via Mininet.
+     - Ryu Controller installs blocking rules in Mininet.
+     - Ryu sends mitigation response/status to ML Service.
+     - ML Service forwards the mitigation status/result to backend.
+     - Backend updates the frontend with mitigation alerts and status.
 
 
 ## 🧠 Machine Learning Pipeline
