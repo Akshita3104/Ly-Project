@@ -1,21 +1,19 @@
-Sentinel AI – SDN Powered AI-Based DDoS Detection & Mitigation System
+# 🛡️ Sentinel AI – SDN Powered AI-Based DDoS Detection & Mitigation System
 
 A complete end-to-end platform for real-time DDoS detection, SDN-based mitigation, and live traffic visualization, integrating:
 
-React (Frontend Dashboard)
-
-Node.js (Backend Layer + WebSockets)
-
-Python Flask (ML Detection API + SDN Controller Integration)
-
-Ryu Controller + Mininet (SDN Emulation)
-
-Locust Load Testing (DDoS Simulation)
+- **React** (Frontend Dashboard)
+- **Node.js** (Backend Layer + WebSockets)
+- **Python Flask** (ML Detection API + SDN Controller Integration)
+- **Ryu Controller + Mininet** (SDN Emulation)
+- **Locust Load Testing** (DDoS Simulation)
 
 Sentinel AI is designed for 5G and SDN-enabled networks, supporting real-time analytics, anomaly detection, auto-mitigation, and network slicing.
 
-📁 Project Folder Structure
-Ly-Project/
+## 📁 Project Folder Structure
+
+```
+Sentinel-AI/
 │
 ├── backend/
 │   ├── controllers/
@@ -60,151 +58,224 @@ Ly-Project/
 └── Testing/
     ├── locustfile.py
     └── __pycache__/
+```
 
-⚙️ System Architecture Overview
+## ⚙️ System Architecture Overview
+
+```
 ┌──────────┐       ┌────────────┐       ┌─────────────┐       ┌─────────────┐
-│ Mininet  │ ───▶  │ Ryu SDN    │ ───▶  │ Flask ML     │ ───▶  │ Node Backend │ ───▶ React UI
-└──────────┘       │ Controller │       │ API + SDN     │       │ (Socket.IO)  │
-                   └────────────┘       │ Controls      │       └─────────────┘
-                                          └─────────────┘
+│ Mininet  │ ───▶  │ Ryu SDN    │ ───▶  │ Flask ML    │ ───▶  │ Node        │ ───▶ React UI
+│          │       │ Controller │       │ API + SDN   │       │ Backend     │
+└──────────┘       └────────────┘       │ Controls    │       │ (Socket.IO) │
+                                       └─────────────┘       └─────────────┘
+```
 
-Flow Explanation
+### System Workflow
 
-Traffic packets generated inside Mininet topology
+```mermaid
+flowchart LR
+    A[Mininet] -->|Sends Traffic| B[Ryu SDN Controller]
+    B -->|Pushes Flow Stats| C[Flask ML API]
+    C -->|Analyzes Traffic| D[ML Model]
+    D -->|Attack Detected?| E[SDN Rules]
+    D -->|Normal Traffic| F[Allow Traffic]
+    E -->|Mitigation| G[Block/Throttle]
+    C -->|Send Updates| H[Node Backend]
+    H -->|WebSocket| I[React Frontend]
+```
 
-Ryu controller pushes flow stats to Flask API
+### Detailed Flow Explanation
 
-ML Model analyses & detects anomalies
+1. **Traffic Generation**: Mininet generates network traffic in the test environment
+2. **Flow Monitoring**: Ryu SDN Controller monitors and collects flow statistics
+3. **Analysis**: Flask API processes the data and sends it to the ML Model
+4. **Detection**: ML Model analyzes traffic patterns for anomalies
+5. **Mitigation**: If an attack is detected, SDN rules are automatically applied
+6. **Visualization**: Real-time updates are pushed to the frontend dashboard
 
-If attack detected → mitigation engine triggers SDN rules
+## 🧩 Key Features
 
-Node backend receives updates via Python API
+## 🧩 Key Features
 
-Frontend dashboard updates in real-time via WebSockets
+### 🔍 AI-Powered DDoS Detection
+```mermaid
+pie
+    title Detection Components
+    "Feature Extraction" : 35
+    "ML Classification" : 45
+    "Anomaly Detection" : 20
+```
+- Machine Learning classifier (Random Forest / Sklearn)
+- Real-time feature extraction
+- Flow-based detection
 
-🧩 Key Features
-🔍 AI-Powered DDoS Detection
+### 📡 SDN-Controlled Mitigation
+- Ryu + OpenFlow 1.3
+- Dynamic blocking of malicious IPs
+- Flow-table manipulation
 
-Machine Learning classifier (Random Forest / Sklearn)
+### 📊 Live Dashboard
+- Real-time traffic visualization
+- Threat alerts and notifications
+- Flow table monitoring
+- Network slice analytics (eMBB, URLLC, mMTC)
 
-Real-time feature extraction
+### 🔥 DDoS Simulation
+- Locust-based traffic generator
+- Custom attack scenarios
+- Real-time impact analysis
 
-Flow-based detection
+### 🧪 Full Integration Pipeline
+```mermaid
+graph LR
+    A[Frontend] --> B[Backend]
+    B --> C[ML Model]
+    C --> D[SDN Controller]
+    D --> E[Network Nodes]
+    E --> A
+```
+- End-to-end automation
+- Real-time feedback loop
+- Scalable architecture
 
-📡 SDN-Controlled Mitigation
+## 🚀 Installation
 
-Ryu + OpenFlow 1.3
+### 1️⃣ Clone Repository
+```bash
+git clone <https://github.com/Akshita3104/Sentinel-AI.git>
+cd Sentinel-AI
+```
 
-Dynamic blocking of malicious IPs
-
-Flow-table manipulation
-
-📊 Live Dashboard
-
-Traffic charts
-
-Threat alerts
-
-Flow table logs
-
-Slice-specific data (eMBB, URLLC, mMTC)
-
-🔥 DDoS Simulation
-
-Locust traffic generator
-
-Custom attack scenarios
-
-🧪 Full Integration Pipeline
-
-Frontend → Backend → Model → SDN → Nodes
-
-Fully automated loop
-
-🚀 Installation
-1️⃣ Clone Repository
-git clone <your-repository-url>
-cd Ly-Project
-
-🖥 Running the Entire Workflow (5-Terminal Setup)
+## 🖥 Running the Entire Workflow (5-Terminal Setup)
 
 This is the correct & final execution order.
 
-▶ Terminal 1 — Start Ryu SDN Controller
+## 🖥 Running the System
 
-Inside Mininet VM:
+### Terminal Setup Overview
 
+```mermaid
+graph TD
+    A[Terminal 1: Ryu Controller] --> B[Terminal 2: Mininet]
+    B --> C[Terminal 3: ML API]
+    C --> D[Terminal 4: Node Backend]
+    D --> E[Terminal 5: React Frontend]
+```
+
+### ▶ Terminal 1 — Start Ryu SDN Controller
+
+```bash
+# Connect to Mininet VM
 ssh mininet@192.168.56.101
+
+# Start Ryu Controller
 ryu-manager ryu.app.simple_switch_13 ryu.app.ofctl_rest
+```
 
-▶ Terminal 2 — Start Mininet Topology
+### ▶ Terminal 2 — Start Mininet Topology
+
+```bash
+# Connect to Mininet VM
 ssh mininet@192.168.56.101
 
+# Start Mininet with custom topology
 sudo mn --topo single,3 --mac --switch ovsk \
 --controller=remote,ip=127.0.0.1,port=6633
 
-
-Test connectivity:
-
+# Test network connectivity
 pingall
+```
 
-▶ Terminal 3 — Start Python ML Detection API
+### ▶ Terminal 3 — Start ML Detection API
 
-On your host machine:
-
+```bash
+# Navigate to ML application
 cd model/app
+
+# Start the Flask API
 python app.py
+```
 
+> **API Documentation**: [http://127.0.0.1:5001](http://127.0.0.1:5001)
 
-This runs at:
+### ▶ Terminal 4 — Start Node Backend
 
-http://127.0.0.1:5001
-
-▶ Terminal 4 — Start Node Backend
+```bash
+# Navigate to backend directory
 cd backend
+
+# Start the Node.js server
 nodemon index.js
+```
 
+> **Backend API**: [http://localhost:3000](http://localhost:3000)
 
-Runs at:
+### ▶ Terminal 5 — Start React Dashboard
 
-http://localhost:3000
-
-▶ Terminal 5 — Start React Frontend Dashboard
+```bash
+# Navigate to frontend directory
 cd frontend
+
+# Install dependencies (first time only)
+npm install
+
+# Start the development server
 npm run dev
+```
 
+> **Dashboard URL**: [http://localhost:5173](http://localhost:5173)
 
-Open browser:
+## 💣 DDoS Attack Simulation
 
-http://localhost:5173
+### Launching the Attack
 
-💣 Simulating a DDoS Attack (Optional)
+```bash
+# Navigate to testing directory
 cd Testing
+
+# Start Locust with the test scenario
 locust -f locustfile.py
+```
 
+### Accessing Locust Web Interface
+Open your browser and navigate to: [http://localhost:8089](http://localhost:8089)
 
-Open Locust UI:
+### Configuring the Attack
+1. **Number of users**: Total concurrent users
+2. **Spawn rate**: Users spawned per second
+3. **Host**: `http://<your-backend-address>:3000`
 
-http://localhost:8089
+### Monitoring the Attack
+```bash
+# Check SDN switch flow table (in a new terminal)
+curl http://127.0.0.1:8080/stats/flow/1 | python -m json.tool
+```
 
+### Attack Workflow
 
-Enter:
+```mermaid
+sequenceDiagram
+    participant M as Mininet
+    participant R as Ryu Controller
+    participant F as Flask API
+    participant ML as ML Model
+    participant N as Node Backend
+    participant D as Dashboard
 
-Number of users
+    M->>R: Network Traffic
+    R->>F: Flow Statistics
+    F->>ML: Processed Data
+    ML-->>F: Attack Detection
+    F->>R: Mitigation Rules
+    F->>N: Alert Updates
+    N->>D: Real-time Visualization
+```
 
-Spawn rate
-
-Target host (backend API)
-
-Start attack → watch real-time detection in dashboard 🎯
-
-🔍 Optional: Check SDN Switch Flow Table
-curl http://127.0.0.1:8080/stats/flow/1
-
-🧠 Internal Workflow (Detailed)
-1. Mininet sends traffic → Ryu controller  
-2. Ryu exposes OpenFlow stats → Flask API  
-3. Flask extracts features → ML model predicts attack  
+### Expected Outcomes
+- Real-time attack detection in the dashboard
+- Automatic mitigation through SDN rules
+- Visual representation of attack patterns
+- Performance metrics and system health monitoring
 4. If attack:
        - mitigation_engine.py triggers SDN rules
 5. Flask notifies Node backend
@@ -214,27 +285,77 @@ curl http://127.0.0.1:8080/stats/flow/1
 
 Everything works in a continuous real-time feedback loop.
 
-👨‍💻 Development Commands
-Backend
+## � Development Commands
+
+### Backend Setup
+```bash
+# Navigate to backend directory
 cd backend
+
+# Install dependencies
 npm install
+
+# Start development server
 nodemon index.js
+```
 
-Frontend
+### Frontend Setup
+```bash
+# Navigate to frontend directory
 cd frontend
+
+# Install dependencies
 npm install
+
+# Start development server
 npm run dev
+```
 
-Model
+### ML Model Setup
+```bash
+# Navigate to model directory
 cd model
+
+# Install Python dependencies
 pip install -r requirements.txt
+
+# Start the ML API
 python app/app.py
+```
 
-🧪 Troubleshooting
-Clean Mininet
+## 🚨 Troubleshooting
+
+### Clean Mininet Environment
+```bash
+# Clear Mininet configuration
 sudo mn -c
+```
 
-Kill blocked ports
-sudo fuser -k 6633/tcp
-sudo fuser -k 8080/tcp
-sudo fuser -k 5001/tcp
+### Kill Blocked Ports
+```bash
+# Kill processes on commonly used ports
+sudo fuser -k 6633/tcp  # OpenFlow
+sudo fuser -k 8080/tcp  # Ryu Web Interface
+sudo fuser -k 5001/tcp  # Flask API
+```
+
+### Common Issues
+- **Port already in use**: Use the kill commands above
+- **Permission denied**: Prepend commands with `sudo` if needed
+- **Dependency issues**: 
+  ```bash
+  # For Node.js
+  rm -rf node_modules package-lock.json
+  npm cache clean --force
+  npm install
+  
+  # For Python
+  pip freeze > requirements.txt
+  pip install -r requirements.txt --upgrade
+  ```
+
+### System Requirements
+- Node.js v14+
+- Python 3.8+
+- Mininet 2.3+
+- Ryu 4.34+
