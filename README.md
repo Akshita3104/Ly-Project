@@ -64,85 +64,80 @@ Sentinel-AI/
 
 ```mermaid
 flowchart LR
-    UI["React Dashboard"] -- Request Traffic Capture --> BE["Node.js Backend"]
-    BE -- Forward Request --> ML["ML Service (Flask)"]
-    ML -- Capture Traffic (scapy/tshark) --> ML
-    ML -- Normal Traffic Detected --> BE
-    BE -- Respond to Frontend --> UI
+    UI["React Dashboard"] -- WebSocket --> BE["Node.js Backend"]
+    BE -- REST API --> ML["ML Service (Flask)"]
+    Mininet["Mininet Network"] -- Traffic --> ML
+    ML -- Analysis Result --> BE
+    BE -- Updates --> UI
     ML -- Malicious Traffic Detected --> Ryu["Ryu Controller"]
-    ML -- Forward Traffic (malicious) --> Ryu
-    Ryu -- Block Traffic --> Mininet["Mininet Network"]
-    Ryu -- Response to Model --> ML
-    ML -- Forward Mitigation Result --> BE
-    BE -- Respond to Frontend --> UI
+    Ryu -- Flow Rules --> Mininet
 ```
 
 ### Component Interactions
 
 1. **Frontend (React Dashboard)**
-   - Sends request to start traffic capture to backend
-   - Receives and displays detection and mitigation results
-   - Visualizes real-time network traffic
+   - Captures and visualizes real-time network traffic
+   - Sends captured traffic to the backend for analysis
    - Displays detection results and mitigation alerts
 
 2. **Backend (Node.js)**
-   - Forwards traffic capture request from frontend to ML Service
+   - Receives traffic data from the frontend
+   - Forwards data to the ML Service for detection
    - Receives detection/mitigation results from ML Service
-   - Responds to frontend with analysis/mitigation status
+   - Updates the frontend with analysis and mitigation status
 
 3. **ML Service (Flask)**
-   - Captures traffic using scapy/tshark upon backend request
-   - Analyzes captured traffic for normal/malicious patterns
-   - If normal, sends result to backend
-   - If malicious, forwards malicious traffic to Ryu Controller via Mininet
+   - Receives traffic data from the backend
+   - Analyzes traffic for anomalies (normal/malicious)
+   - If traffic is normal, sends result back to backend
+   - If malicious, sends mitigation request to Ryu Controller via Mininet
    - Receives mitigation response from Ryu Controller
-   - Forwards mitigation result to backend
+   - Forwards mitigation status/result to backend
 
 4. **Ryu Controller (SDN)**
-   - Receives malicious traffic from ML Service via Mininet
-   - Blocks malicious traffic in Mininet
+   - Receives mitigation instructions from ML Service
+   - Installs flow rules in Mininet to block/mitigate malicious traffic
    - Sends mitigation response/status to ML Service
 
 5. **Mininet Network**
-   - Emulates SDN environment
-   - Applies flow rules to block malicious traffic
+   - Emulates the SDN environment
+   - Forwards traffic and applies flow rules
 
 ### Data Flow Sequence
 
-1. **Traffic Capture and Detection**
-   - Frontend sends a request for traffic capture to the backend.
-   - Backend forwards the request to the ML Service.
-   - ML Service captures traffic using scapy/tshark and analyzes it.
-   - If traffic is normal:
-     - ML Service sends the result to backend.
-     - Backend responds to frontend with normal status.
-   - If malicious traffic is detected:
-     - ML Service forwards the malicious traffic to the Ryu Controller via Mininet.
-     - Ryu blocks the traffic in Mininet and sends a response back to the ML Service.
-     - ML Service forwards the mitigation response to backend.
-     - Backend responds to frontend with mitigation status/result.
+1. **Normal Traffic Flow**
+   - Frontend captures network traffic and sends it to the backend.
+   - Backend forwards the traffic data to the ML Service.
+   - ML Service analyzes the traffic:
+     - If traffic is normal, ML Service sends result back to backend.
+     - Backend updates the frontend dashboard with the normal status.
+
+2. **DDoS Detection & Mitigation**
+   - If ML Service detects malicious traffic:
+     - ML Service sends a mitigation request to the Ryu Controller via Mininet.
+     - Ryu Controller installs blocking rules in Mininet.
+     - Ryu sends mitigation response/status to ML Service.
+     - ML Service forwards the mitigation status/result to backend.
+     - Backend updates the frontend with mitigation alerts and status.
 
 
 ## 🧠 Machine Learning Pipeline
 
 ```mermaid
 graph TD
-    A[Capture Traffic (scapy/tshark)] --> B[Feature Extraction]
+    A[Raw Traffic] --> B[Feature Extraction]
     B --> C[Preprocessing]
     C --> D[Model Inference]
     D --> E{Normal Traffic?}
-    E -->|Yes| F[Send Result to Backend]
-    E -->|No| G[Send Traffic to SDN Controller]
-    G --> H[Receive Mitigation Response]
-    H --> I[Forward Response to Backend]
+    E -->|Yes| F[Allow Traffic]
+    E -->|No| G[Send to SDN Controller via Mininet]
 ```
 
 ### Key ML Components
-- **Traffic Capture**: Uses scapy/tshark to capture network packets
-- **Feature Extraction**: Extracts relevant flow characteristics
-- **Anomaly Detection**: Identifies suspicious/malicious patterns
+- **Feature Extraction**: Network flow characteristics
+- **Anomaly Detection**: Identifies suspicious patterns
 - **Classification**: Categorizes traffic as normal or malicious
-- **Mitigation Handling**: Forwards malicious traffic to SDN Controller via Mininet, receives mitigation response, and forwards result to backend
+- **Mitigation Trigger**: Sends malicious traffic to SDN Controller via Mininet for mitigation
 
 ## 🧩 Key Features
 
@@ -177,36 +172,14 @@ pie
 ### 🧪 Full Integration Pipeline
 ```mermaid
 graph LR
-    UI[Frontend] -- Request Capture --> BE[Backend]
-    BE -- Forward Request --> ML[ML Model]
-    ML -- Capture & Analyze --> ML
-    ML -- Normal Traffic --> BE
-    BE -- Response --> UI
-    ML -- Malicious Traffic --> SDN[SDN Controller]
-    SDN -- Block & Respond --> ML
-    ML -- Mitigation Result --> BE
-    BE -- Response --> UI
+    A[Frontend] --> B[Backend]
+    B --> C[ML Model]
+    C --> D[SDN Controller]
+    D --> E[Network Nodes]
+    E --> A
 ```
 - End-to-end automation
 - Real-time feedback loop
-
-### 🛡️ Attack Workflow
-```mermaid
-graph TD
-    F[Frontend] --> B[Backend]
-    B --> M[ML Model]
-    M -- Normal --> B
-    B -- Inform --> F
-    M -- Malicious --> S[SDN Controller]
-    S -- Blocked/Status --> M
-    M --> B
-    B --> F
-```
-- Frontend initiates capture
-- ML analyzes and classifies
-- Backend relays all results
-- SDN controller only involved if attack is detected
-- All results/mitigation statuses return to frontend
 - Scalable architecture
 
 ## 🚀 Installation
